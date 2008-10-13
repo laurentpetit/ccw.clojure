@@ -1,0 +1,13 @@
+Manifest-Version: 1.0
+Bundle-ManifestVersion: 2
+Bundle-Name: Clojure Plug-in
+Bundle-SymbolicName: clojure;singleton:=true
+Bundle-Version: 1.0.0
+Bundle-ClassPath: clojure.jar,
+ .
+Export-Package: clojure.asm,
+ clojure.asm.commons,
+ clojure.lang
+Bundle-ActivationPolicy: lazy
+Bundle-Activator: clojure.util.Activator
+Require-Bundle: org.eclipse.core.runtime;bundle-version="3.4.0"
