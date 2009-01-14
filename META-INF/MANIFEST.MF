@@ -3,9 +3,9 @@ Bundle-ManifestVersion: 2
 Bundle-Name: Clojure Plug-in
 Bundle-SymbolicName: clojure;singleton:=true
 Bundle-Version: 0.0.1
-Bundle-ClassPath: clojure.jar,
- .
-Export-Package: clojure.asm,
+Bundle-ClassPath: .
+Export-Package: clojure,
+ clojure.asm,
  clojure.asm.commons,
  clojure.lang,
  clojure.util
