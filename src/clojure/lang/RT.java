@@ -15,9 +15,6 @@ package clojure.lang;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.Callable;
 import java.util.*;
-import java.util.zip.ZipEntry;
-import java.util.jar.JarFile;
-import java.util.jar.JarEntry;
 import java.util.regex.Matcher;
 import java.io.*;
 import java.lang.reflect.Array;
@@ -26,7 +23,6 @@ import java.math.BigInteger;
 import java.security.AccessController;
 import java.security.PrivilegedAction;
 import java.net.URL;
-import java.net.URLConnection;
 import java.net.JarURLConnection;
 import java.nio.charset.Charset;
 
@@ -240,11 +236,11 @@ static public final Comparator DEFAULT_COMPARATOR = new Comparator(){
 };
 
 static AtomicInteger id = new AtomicInteger(1);
-static final public DynamicClassLoader ROOT_CLASSLOADER = new DynamicClassLoader();
+private static DynamicClassLoader ROOT_CLASSLOADER = null;
 
 static public void addURL(Object url) throws Exception{
 	URL u = (url instanceof String) ? (new URL((String) url)) : (URL) url;
-	ROOT_CLASSLOADER.addURL(u);
+	getRootClassLoader().addURL(u);
 }
 
 static
@@ -346,11 +342,13 @@ static public long lastModified(URL url,String libfile) throws Exception{
 		{
 		return ((JarURLConnection)url.openConnection()).getJarFile().getEntry(libfile).getTime();
 		}
-	else
+	else if(url.getProtocol().equals("file"))
 		{
 		File f = new File(url.toURI());
 		return f.lastModified();
 		}
+    else
+        return 0;
 }
 
 static void compile(String cljfile) throws Exception{
@@ -381,31 +379,33 @@ static public void load(String scriptbase, boolean failIfNotFound) throws Except
 	String cljfile = scriptbase + ".clj";
 	URL classURL = baseLoader().getResource(classfile);
 	URL cljURL = baseLoader().getResource(cljfile);
+    boolean loaded = false;
 
-	if(classURL != null &&
-	   (cljURL == null
-	    || lastModified(classURL, classfile) > lastModified(cljURL, cljfile)))
+	if((classURL != null &&
+	    (cljURL == null
+	        || lastModified(classURL, classfile) > lastModified(cljURL, cljfile)))
+        || classURL == null)
 		{
 		try
 			{
 			Var.pushThreadBindings(
 					RT.map(CURRENT_NS, CURRENT_NS.get(),
 					       WARN_ON_REFLECTION, WARN_ON_REFLECTION.get()));
-			loadClassForName(scriptbase.replace('/','.') + LOADER_SUFFIX);
+			loaded = (loadClassForName(scriptbase.replace('/','.') + LOADER_SUFFIX) != null);
 			}
 		finally
 			{
 			Var.popThreadBindings();
 			}
 		}
-	else if(cljURL != null)
+	if(!loaded && cljURL != null)
 		{
 		if (booleanCast(Compiler.COMPILE_FILES.get()))
 			compile(cljfile);
 		else
 			loadResourceScript(RT.class, cljfile);
 		}
-	else if(failIfNotFound)
+	else if(!loaded && failIfNotFound)
 		throw new FileNotFoundException(String.format("Could not locate %s or %s on classpath: ", classfile, cljfile));
 }
 
@@ -500,8 +500,8 @@ static public ISeq vals(Object coll){
 }
 
 static public IPersistentMap meta(Object x){
-	if(x instanceof IObj)
-		return ((Obj) x).meta();
+	if(x instanceof IMeta)
+		return ((IMeta) x).meta();
 	return null;
 }
 
@@ -663,14 +663,15 @@ static public Object contains(Object coll, Object key){
 static public Object find(Object coll, Object key){
 	if(coll == null)
 		return null;
-	else if(coll instanceof Map)
+	else if(coll instanceof Associative)
+        return ((Associative) coll).entryAt(key);
+    else
 		{
 		Map m = (Map) coll;
 		if(m.containsKey(key))
 			return new MapEntry(key, m.get(key));
 		return null;
 		}
-	return ((Associative) coll).entryAt(key);
 }
 
 //takes a seq of key,val,key,val
@@ -704,7 +705,7 @@ static public Object nth(Object coll, int n){
 		return Character.valueOf(((String) coll).charAt(n));
 	else if(coll.getClass().isArray())
 		return Reflector.prepRet(Array.get(coll, n));
-	else if(coll instanceof List)
+	else if(coll instanceof RandomAccess)
 		return ((List) coll).get(n);
 	else if(coll instanceof Matcher)
 		return ((Matcher) coll).group(n);
@@ -814,10 +815,7 @@ static public Object assocN(int n, Object val, Object coll){
 }
 
 static boolean hasTag(Object o, Object tag){
-	if(!(o instanceof IObj))
-		return false;
-	IPersistentMap meta = ((IObj) o).meta();
-	return Util.equal(tag, RT.get(meta, TAG_KEY));
+	return Util.equals(tag, RT.get(RT.meta(o), TAG_KEY));
 }
 
 /**
@@ -1412,7 +1410,7 @@ static public Object format(Object o, String s, Object... args) throws Exception
 	Writer w;
 	if(o == null)
 		w = new StringWriter();
-	else if(Util.equal(o, T))
+	else if(Util.equals(o, T))
 		w = (Writer) OUT.get();
 	else
 		w = (Writer) o;
@@ -1490,6 +1488,7 @@ static public Object[] setValues(Object... vals){
 static public ClassLoader makeClassLoader(){
 	return (ClassLoader) AccessController.doPrivileged(new PrivilegedAction(){
 		public Object run(){
+            getRootClassLoader();
 			return new DynamicClassLoader(baseLoader());
 		}
 	});
@@ -1498,12 +1497,14 @@ static public ClassLoader makeClassLoader(){
 static public ClassLoader baseLoader(){
 	if(booleanCast(USE_CONTEXT_CLASSLOADER.get()))
 		return Thread.currentThread().getContextClassLoader();
-	return ROOT_CLASSLOADER;
+    else if(ROOT_CLASSLOADER != null)
+	    return ROOT_CLASSLOADER;
+    return Compiler.class.getClassLoader();
 }
 
 static public Class classForName(String name) throws ClassNotFoundException{
 
-	return Class.forName(name, false, baseLoader());
+	return Class.forName(name, true, baseLoader());
 }
 
 static public Class loadClassForName(String name) throws ClassNotFoundException{
@@ -1700,4 +1701,10 @@ static final public IStream EMPTY_STREAM = new IStream(){
         return eos();
     }
 };
+
+synchronized public static DynamicClassLoader getRootClassLoader() {
+    if(ROOT_CLASSLOADER == null)
+        ROOT_CLASSLOADER = new DynamicClassLoader();
+    return ROOT_CLASSLOADER;
+    }
 }

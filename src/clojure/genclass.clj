@@ -32,7 +32,8 @@
                       mods (. meth (getModifiers))
                       mk (method-sig meth)]
                   (if (or (considered mk)
-                          (. Modifier (isPrivate mods))
+                          (not (or (Modifier/isPublic mods) (Modifier/isProtected mods)))
+                          ;(. Modifier (isPrivate mods))
                           (. Modifier (isStatic mods))
                           (. Modifier (isFinal mods))
                           (= "finalize" (.getName meth)))
@@ -134,7 +135,7 @@
                            (when main [main-name])
                            ;(when exposes-methods (map str (vals exposes-methods)))
                            (distinct (concat (keys sigs-by-name)
-                                             (mapcat (fn [[m s]] (map #(overload-name m %) s)) overloads)
+                                             (mapcat (fn [[m s]] (map #(overload-name m (map the-class %)) s)) overloads)
                                              (mapcat (comp (partial map str) vals val) exposes))))
         emit-get-var (fn [gen v]
                        (let [false-label (. gen newLabel)
@@ -181,6 +182,7 @@
                 (when is-overload
                   (. gen (mark found-label)))
                                         ;if found
+                (.checkCast gen ifn-type)
                 (when-not as-static
                   (. gen (loadThis)))
                                         ;box args
@@ -274,6 +276,7 @@
             (emit-get-var gen init-name)
             (. gen dup)
             (. gen ifNull no-init-label)
+            (.checkCast gen ifn-type)
                                         ;box init args
             (dotimes [i (count pclasses)]
               (. gen (loadArg i))
@@ -386,6 +389,7 @@
         (emit-get-var gen main-name)
         (. gen dup)
         (. gen ifNull no-main-label)
+        (.checkCast gen ifn-type)
         (. gen loadArgs)
         (. gen (invokeStatic rt-type (. Method (getMethod "clojure.lang.ISeq seq(Object)"))))
         (. gen (invokeInterface ifn-type (new Method "applyTo" obj-type 
@@ -632,6 +636,6 @@
   [& options]
   (let [options-map (apply hash-map options)
         [cname bytecode] (generate-class options-map)]
-    (.. clojure.lang.RT ROOT_CLASSLOADER (defineClass cname bytecode))))
+    (.. (clojure.lang.RT/getRootClassLoader) (defineClass cname bytecode))))
 
 )

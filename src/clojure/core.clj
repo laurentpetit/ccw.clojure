@@ -8,6 +8,8 @@
 
 (ns clojure.core)
 
+(def unquote)
+
 (def
  #^{:arglists '([& items])
     :doc "Creates a new list containing the items."}
@@ -148,8 +150,8 @@
  #^{:arglists '([obj])
     :doc "Returns the metadata of obj, returns nil if there is no metadata."}
  meta (fn meta [x]
-        (if (instance? clojure.lang.IObj x)
-          (. #^clojure.lang.IObj x (meta)))))
+        (if (instance? clojure.lang.IMeta x)
+          (. #^clojure.lang.IMeta x (meta)))))
 
 (def
  #^{:arglists '([#^clojure.lang.IObj obj m])
@@ -356,7 +358,10 @@
   [& clauses]
     (when clauses
       (list 'if (first clauses)
-            (second clauses)
+            (if (rest clauses)
+                (second clauses)
+                (throw (IllegalArgumentException.
+                         "cond requires an even number of forms")))
             (cons 'clojure.core/cond (rest (rest clauses))))))
 
 (defn spread
@@ -379,7 +384,7 @@
     (spread (cons item more)))
 
 (defmacro delay
-  "Takes a body of expressions and yields a Delay object than will
+  "Takes a body of expressions and yields a Delay object that will
   invoke the body only the first time it is forced (with force), and
   will cache the result and return it on all subsequent force calls"
   [& body] 
@@ -453,14 +458,14 @@
 (defn =
   "Equality. Returns true if x equals y, false if not. Same as
   Java x.equals(y) except it also works for nil, and compares
-  numbers in a type-independent manner.  Clojure's immutable data
+  numbers and collections in a type-independent manner.  Clojure's immutable data
   structures define equals() (and thus =) as a value, not an identity,
   comparison."
   {:tag Boolean
-   :inline (fn [x y] `(. clojure.lang.Util equal ~x ~y))
+   :inline (fn [x y] `(. clojure.lang.Util equiv ~x ~y))
    :inline-arities #{2}} 
   ([x] true)
-  ([x y] (. clojure.lang.Util (equal x y)))
+  ([x y] (clojure.lang.Util/equiv x y))
   ([x y & more]
    (if (= x y)
      (if (rest more)
@@ -481,8 +486,8 @@
 (defn compare
   "Comparator. Returns 0 if x equals y, -1 if x is logically 'less
   than' y, else 1. Same as Java x.compareTo(y) except it also works
-  for nil, and compares numbers in a type-independent manner. x must
-  implement Comparable"
+  for nil, and compares numbers and collections in a type-independent
+  manner. x must implement Comparable" 
   {:tag Integer
    :inline (fn [x y] `(. clojure.lang.Util compare ~x ~y))} 
   [x y] (. clojure.lang.Util (compare x y)))
@@ -868,8 +873,12 @@
 ;;map stuff
 
 (defn contains?
-  "Returns true if key is present, else false."
-  [map key] (. clojure.lang.RT (contains map key)))
+  "Returns true if key is present in the given collection, otherwise
+  returns false.  Note that for numerically indexed collections like
+  vectors and Java arrays, this tests if the numeric key is within the
+  range of indexes. 'contains?' operates constant or logarithmic time;
+  it will not perform a linear search for a value.  See also 'some'."
+  [coll key] (. clojure.lang.RT (contains coll key)))
 
 (defn get
   "Returns the value mapped to key, not-found or nil if key not present."
@@ -1019,6 +1028,14 @@
 
 ;;;;;;;;; var stuff      
 
+(defmacro #^{:private true} assert-args [fnname & pairs]
+  `(do (when-not ~(first pairs)
+         (throw (IllegalArgumentException.
+                  ~(str fnname " requires " (second pairs)))))
+     ~(let [more (rrest pairs)]
+        (when more
+          (list* `assert-args fnname more)))))
+
 (defmacro binding
   "binding => var-symbol init-expr 
 
@@ -1026,6 +1043,9 @@
   supplied initial values, executes the exprs in an implicit do, then
   re-establishes the bindings that existed before."  
   [bindings & body]
+    (assert-args binding
+      (vector? bindings) "a vector for its binding"
+      (even? (count bindings)) "an even number of forms in binding vector")
     (let [var-ize (fn [var-vals]
                     (loop [ret [] vvs (seq var-vals)]
                       (if vvs
@@ -1045,14 +1065,31 @@
  [sym] (. clojure.lang.Var (find sym)))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;; Refs ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+(defn #^{:private true}
+  setup-reference [r options]
+  (let [opts (apply hash-map options)]
+    (when (:meta opts)
+      (.resetMeta r (:meta opts)))
+    (when (:validator opts)
+      (.setValidator r (:validator opts)))
+    r))
+
 (defn agent
-  "Creates and returns an agent with an initial value of state and an
-  optional validate fn. validate-fn must be nil or a side-effect-free fn of
-  one argument, which will be passed the intended new state on any state
+  "Creates and returns an agent with an initial value of state and
+  zero or more options (in any order):
+  
+  :meta metadata-map
+  
+  :validator validate-fn
+
+  If metadata-map is supplied, it will be come the metadata on the
+  agent. validate-fn must be nil or a side-effect-free fn of one
+  argument, which will be passed the intended new state on any state
   change. If the new state is unacceptable, the validate-fn should
-  throw an exception."
+  return false or throw an exception."
   ([state] (new clojure.lang.Agent state))
-  ([state validate-fn] (new clojure.lang.Agent state validate-fn)))
+  ([state & options]
+     (setup-reference (agent state) options)))
 
 (defn send
   "Dispatch an action to an agent. Returns the agent immediately.
@@ -1072,24 +1109,32 @@
   [#^clojure.lang.Agent a f & args]
     (. a (dispatch f args true)))
 
-(defn add-watch
-  "Experimental.
-  Adds a watcher to an agent. Whenever the agent runs an action, any
-  registered watchers will have their callback function called.  The
-  callback fn will be passed 3 args, the watcher, the agent and a boolean
-  which will be true if the agent's state was (potentially) changed by
-  the action. The callback fn is run synchronously with the action,
-  and thus derefs of the agent in the callback will see the value set
-  during that action. Because it is run on the action thread, the
-  callback should not block, but can send messages."
-  [#^clojure.lang.Agent a watcher callback]
-  (.addWatch a watcher callback))
+(defn release-pending-sends 
+  "Normally, actions sent directly or indirectly during another action
+  are held until the action completes (changes the agent's
+  state). This function can be used to dispatch any pending sent
+  actions immediately. This has no impact on actions sent during a
+  transaction, which are still held until commit. If no action is
+  occurring, does nothing. Returns the number of actions dispatched."  
+  [] (clojure.lang.Agent/releasePendingSends))
 
-(defn remove-watch
+(defn add-watcher
   "Experimental.
-  Removes a watcher (set by add-watch) from an agent"
-  [#^clojure.lang.Agent a watcher]
-  (.removeWatch a watcher))
+  Adds a watcher to an agent/atom/var/ref reference. The watcher must
+  be an Agent, and the action a function of the agent's state and one
+  additional arg, the reference. Whenever the reference's state
+  changes, any registered watchers will have their actions
+  sent. send-type must be one of :send or :send-off. The actions will
+  be sent after the reference's state is changed. Var watchers are
+  triggered only by root binding changes, not thread-local set!s"
+  [#^clojure.lang.IRef reference send-type watcher-agent action-fn]
+  (.addWatch reference watcher-agent action-fn (= send-type :send-off)))
+
+(defn remove-watcher
+  "Experimental.
+  Removes a watcher (set by add-watcher) from a reference"
+  [#^clojure.lang.IRef reference watcher-agent]
+  (.removeWatch reference watcher-agent))
 
 (defn agent-errors
   "Returns a sequence of the exceptions thrown during asynchronous
@@ -1108,14 +1153,21 @@
   [] (. clojure.lang.Agent shutdown))
 
 (defn ref
-  "Creates and returns a Ref with an initial value of x and an optional validate fn.
-  validate-fn must be nil or a side-effect-free fn of one argument, which will
-  be passed the intended new state on any state change. If the new
-  state is unacceptable, the validate-fn should throw an
-  exception. validate-fn will be called on transaction commit, when
-  all refs have their final values."  
+  "Creates and returns a Ref with an initial value of x and zero or
+  more options (in any order):
+  
+  :meta metadata-map
+  
+  :validator validate-fn
+
+  If metadata-map is supplied, it will be come the metadata on the
+  ref. validate-fn must be nil or a side-effect-free fn of one
+  argument, which will be passed the intended new state on any state
+  change. If the new state is unacceptable, the validate-fn should
+  return false or throw an exception. validate-fn will be called on
+  transaction commit, when all refs have their final values." 
   ([x] (new clojure.lang.Ref x))
-  ([x validate-fn] (new clojure.lang.Ref x validate-fn)))
+  ([x & options] (setup-reference (ref x) options)))
 
 (defn deref
   "Also reader macro: @ref/@agent/@var/@atom Within a transaction,
@@ -1124,11 +1176,45 @@
   or atom, returns its current state."  
   [#^clojure.lang.IRef ref] (. ref (get)))
 
-(defn set-validator
+(defn atom
+  "Creates and returns an Atom with an initial value of x and zero or
+  more options (in any order):
+  
+  :meta metadata-map
+  
+  :validator validate-fn
+
+  If metadata-map is supplied, it will be come the metadata on the
+  atom. validate-fn must be nil or a side-effect-free fn of one
+  argument, which will be passed the intended new state on any state
+  change. If the new state is unacceptable, the validate-fn should
+  return false or throw an exception."
+  ([x] (new clojure.lang.Atom x))
+  ([x & options] (setup-reference (atom x) options)))
+
+(defn swap!
+  "Atomically swaps the value of atom to be:
+  (apply f current-value-of-atom args). Note that f may be called
+  multiple times, and thus should be free of side effects.  Returns
+  the value that was swapped in."  
+  [#^clojure.lang.Atom atom f & args] (.swap atom f args))
+
+(defn compare-and-set! 
+  "Atomically sets the value of atom to newval if and only if the
+  current value of the atom is identical to oldval. Returns true if
+  set happened, else false" 
+  [#^clojure.lang.Atom atom oldval newval] (.compareAndSet atom oldval newval))
+
+(defn reset! 
+  "Sets the value of atom to newval without regard for the
+  current value. Returns newval." 
+  [#^clojure.lang.Atom atom newval] (.reset atom newval))
+
+(defn set-validator!
   "Sets the validator-fn for a var/ref/agent/atom. validator-fn must be nil or a
   side-effect-free fn of one argument, which will be passed the intended
   new state on any state change. If the new state is unacceptable, the
-  validator-fn should throw an exception. If the current state (root
+  validator-fn should return false or throw an exception. If the current state (root
   value if var) is not acceptable to the new validator, an exception
   will be thrown and the validator will not be changed." 
   [#^clojure.lang.IRef iref validator-fn] (. iref (setValidator validator-fn)))
@@ -1136,6 +1222,18 @@
 (defn get-validator
   "Gets the validator-fn for a var/ref/agent/atom."
  [#^clojure.lang.IRef iref] (. iref (getValidator)))
+
+(defn alter-meta!
+  "Atomically sets the metadata for a namespace/var/ref/agent/atom to be: 
+  
+  (apply f its-current-meta args) 
+  
+  f must be free of side-effects"
+ [#^clojure.lang.IReference iref f & args] (.alterMeta iref f args))
+
+(defn reset-meta!
+  "Atomically resets the metadata for a namespace/var/ref/agent/atom"
+ [#^clojure.lang.IReference iref metadata-map] (.resetMeta iref metadata-map))
 
 (defn commute
   "Must be called in a transaction. Sets the in-transaction-value of
@@ -1255,7 +1353,9 @@
 
 (defn some
   "Returns the first logical true value of (pred x) for any x in coll,
-  else nil."
+  else nil.  One common idiom is to use a set as pred, for example
+  this will return true if :fred is in the sequence, otherwise nil:
+  (some #{:fred} coll)"
   [pred coll]
     (when (seq coll)
       (or (pred (first coll)) (recur pred (rest coll)))))
@@ -1384,10 +1484,12 @@
 (defn range
   "Returns a lazy seq of nums from start (inclusive) to end
   (exclusive), by step, where start defaults to 0 and step to 1."
-  ([end] (if (and (> end 0) (< end (. Integer MAX_VALUE)))
+  ([end] (if (and (> end 0) (<= end (. Integer MAX_VALUE)))
            (new clojure.lang.Range 0 end)
            (take end (iterate inc 0))))
-  ([start end] (if (and (< start end) (< end (. Integer MAX_VALUE)))
+  ([start end] (if (and (< start end)
+                        (>= start (. Integer MIN_VALUE))
+                        (<= end (. Integer MAX_VALUE)))
                  (new clojure.lang.Range start end)
                  (take (- end start) (iterate inc start))))
   ([start end step]
@@ -1490,6 +1592,9 @@
   bindings and filtering as provided by \"for\".  Does not retain
   the head of the sequence. Returns nil."
   [seq-exprs & body]
+  (assert-args doseq
+     (vector? seq-exprs) "a vector for its binding"
+     (even? (count seq-exprs)) "an even number of forms in binding vector")
   (let [groups (reduce (fn [groups p]
                         (if (keyword? (first p))
                           (conj (pop groups) (apply assoc (peek groups) p))
@@ -1574,16 +1679,16 @@
   Repeatedly executes body (presumably for side-effects) with name
   bound to integers from 0 through n-1."
   [bindings & body]
-  (if (vector? bindings)
-    (let [i (first bindings)
-          n (second bindings)]
-      `(let [n# (int ~n)]
-         (loop [~i (int 0)]
-           (when (< ~i n#)
-             ~@body
-             (recur (unchecked-inc ~i))))))
-    (throw (IllegalArgumentException.
-             "dotimes now requires a vector for its binding"))))
+  (assert-args dotimes
+     (vector? bindings) "a vector for its binding"
+     (= 2 (count bindings)) "exactly 2 forms in binding vector")
+  (let [i (first bindings)
+        n (second bindings)]
+    `(let [n# (int ~n)]
+       (loop [~i (int 0)]
+         (when (< ~i n#)
+           ~@body
+           (recur (unchecked-inc ~i)))))))
 
 (defn import
   "import-list => (package-symbol class-name-symbols*)
@@ -1591,14 +1696,19 @@
   For each name in class-name-symbols, adds a mapping from name to the
   class named by package.name to the current namespace. Use :import in the ns 
   macro in preference to calling this directly."  
-  [& import-lists]
-    (when import-lists
-      (let [#^clojure.lang.Namespace ns *ns*
-            pkg (ffirst import-lists)
-            classes (rfirst import-lists)]
-        (doseq [c classes]
-          (. ns (importClass c (. Class (forName (str pkg "." c)))))) )
-      (apply import (rest import-lists))))
+  [& import-symbols-or-lists]
+    (let [#^clojure.lang.Namespace ns *ns*]
+      (doseq [spec import-symbols-or-lists]
+        (if (symbol? spec)
+          (let [n (name spec)
+                dot (.lastIndexOf n (. clojure.lang.RT (intCast \.)))
+                c (symbol (.substring n (inc dot)))]
+            (. ns (importClass c (. clojure.lang.RT (classForName (name spec))))))
+          (let [pkg (first spec)
+                classes (rest spec)]
+            (doseq [c classes]
+              (. ns (importClass c (. clojure.lang.RT (classForName (str pkg "." c)))))))))))
+
 
 (defn into-array
   "Returns an array with components set to the values in aseq. The array's
@@ -1812,20 +1922,36 @@
   "Reads one object from the string s"
   [s] (clojure.lang.RT/readString s))
 
-(defmacro with-open
-  "bindings => name init
+(defn subvec
+  "Returns a persistent vector of the items in vector from
+  start (inclusive) to end (exclusive).  If end is not supplied,
+  defaults to (count vector). This operation is O(1) and very fast, as
+  the resulting vector shares structure with the original and no
+  trimming is done."
+  ([v start]
+   (subvec v start (count v)))
+  ([v start end]
+   (. clojure.lang.RT (subvec v start end))))
 
-  Evaluates body in a try expression with name bound to the value of
-  init, and a finally clause that calls (.close name)."
+(defmacro with-open
+  "bindings => [name init ...]
+
+  Evaluates body in a try expression with names bound to the values
+  of the inits, and a finally clause that calls (.close name) on each
+  name in reverse order."
   [bindings & body]
-  (if (vector? bindings)
-    `(let ~bindings
-       (try
-         ~@body
-         (finally
-           (.close ~(first bindings)))))
-    (throw (IllegalArgumentException.
-             "with-open now requires a vector for its binding"))))
+  (assert-args with-open
+     (vector? bindings) "a vector for its binding"
+     (even? (count bindings)) "an even number of forms in binding vector")
+  (cond
+    (= (count bindings) 0) `(do ~@body)
+    (symbol? (bindings 0)) `(let ~(subvec bindings 0 2)
+                              (try
+                                (with-open ~(subvec bindings 2) ~@body)
+                                (finally
+                                  (. ~(bindings 0) close))))
+    :else (throw (IllegalArgumentException.
+                   "with-open only allows Symbols in bindings"))))
 
 (defmacro doto
   "Evaluates x then calls all of the methods and functions with the 
@@ -2017,17 +2143,6 @@
   performance-critical areas."
   [s key]
     (. clojure.lang.PersistentStructMap (getAccessor s key)))
-
-(defn subvec
-  "Returns a persistent vector of the items in vector from
-  start (inclusive) to end (exclusive).  If end is not supplied,
-  defaults to (count vector). This operation is O(1) and very fast, as
-  the resulting vector shares structure with the original and no
-  trimming is done."
-  ([v start]
-   (subvec v start (count v)))
-  ([v start end]
-   (. clojure.lang.RT (subvec v start end))))
 
 (defn load-reader
   "Sequentially read and evaluate the set of forms contained in the
@@ -2223,6 +2338,9 @@
   to the var objects themselves, and must be accessed with var-get and
   var-set"
   [name-vals-vec & body]
+  (assert-args with-local-vars
+     (vector? name-vals-vec) "a vector for its binding"
+     (even? (count name-vals-vec)) "an even number of forms in binding vector")
   `(let [~@(interleave (take-nth 2 name-vals-vec)
                        (repeat '(. clojure.lang.Var (create))))]
      (. clojure.lang.Var (pushThreadBindings (hash-map ~@name-vals-vec)))
@@ -2318,8 +2436,9 @@
   the binding-forms are bound to their respective init-exprs or parts
   therein."
   [bindings & body]
-  (when (odd? (count bindings))
-    (throw (Exception. "Odd number of elements in let bindings")))
+  (assert-args let
+     (vector? bindings) "a vector for its binding"
+     (even? (count bindings)) "an even number of forms in binding vector")
   `(let* ~(destructure bindings) ~@body))
 
 ;redefine fn with destructuring
@@ -2365,6 +2484,9 @@
   the binding-forms are bound to their respective init-exprs or parts
   therein. Acts as a recur target."
   [bindings & body]
+    (assert-args loop
+      (vector? bindings) "a vector for its binding"
+      (even? (count bindings)) "an even number of forms in binding vector")
     (let [db (destructure bindings)]
       (if (= db bindings)
         `(loop* ~bindings ~@body)
@@ -2386,13 +2508,13 @@
 
   Same as (when (seq xs) (let [x (first xs)] body))"
   [bindings & body]
-  (if (vector? bindings)
-    (let [[x xs] bindings]
-      `(when (seq ~xs)
-         (let [~x (first ~xs)]
-           ~@body)))
-    (throw (IllegalArgumentException.
-             "when-first now requires a vector for its binding"))))
+  (assert-args when-first
+     (vector? bindings) "a vector for its binding"
+     (= 2 (count bindings)) "exactly 2 forms in binding vector")
+  (let [[x xs] bindings]
+    `(when (seq ~xs)
+       (let [~x (first ~xs)]
+         ~@body))))
 
 (defmacro lazy-cat
   "Expands to code which yields a lazy sequence of the concatenation
@@ -2416,6 +2538,9 @@
 
  (take 100 (for [x (range 100000000) y (range 1000000) :while (< y x)]  [x y]))"
  ([seq-exprs expr]
+  (assert-args for
+     (vector? seq-exprs) "a vector for its binding"
+     (even? (count seq-exprs)) "an even number of forms in binding vector")
   (let [to-groups (fn [seq-exprs]
                     (reduce (fn [groups [k v]]
                               (if (keyword? k)
@@ -2722,29 +2847,29 @@
   ([bindings then]
    `(if-let ~bindings ~then nil))
   ([bindings then else & oldform]
-   (if (and (vector? bindings) (nil? oldform))
-     (let [[form tst] bindings]
-       `(let [temp# ~tst]
-          (if temp# 
-            (let [~form temp#]
-              ~then)
-            ~else)))
-     (throw (IllegalArgumentException.
-              "if-let now requires a vector for its binding")))))
+   (assert-args if-let
+     (and (vector? bindings) (nil? oldform)) "a vector for its binding"
+     (= 2 (count bindings)) "exactly 2 forms in binding vector")
+   (let [[form tst] bindings]
+     `(let [temp# ~tst]
+        (if temp# 
+          (let [~form temp#]
+            ~then)
+          ~else)))))
 
 (defmacro when-let
   "bindings => binding-form test
 
   When test is true, evaluates body with binding-form bound to the value of test"
   [bindings & body]
-  (if (vector? bindings)
-    (let [[form tst] bindings]
-      `(let [temp# ~tst]
-         (when temp#
-           (let [~form temp#]
-             ~@body))))
-    (throw (IllegalArgumentException.
-             "when-let now requires a vector for its binding"))))
+  (assert-args when-let
+     (vector? bindings) "a vector for its binding"
+     (= 2 (count bindings)) "exactly 2 forms in binding vector")
+  (let [[form tst] bindings]
+    `(let [temp# ~tst]
+       (when temp#
+         (let [~form temp#]
+           ~@body)))))
 
 (defn replace
   "Given a map of replacement pairs and a vector/collection, returns a
@@ -3112,7 +3237,7 @@
 
 
 (defn distinct?
-  "Returns true if no two of the arguments are equal"
+  "Returns true if no two of the arguments are ="
   {:tag Boolean}
   ([x] true)
   ([x y] (not (= x y)))
@@ -3591,8 +3716,6 @@
        ~@body
        (recur))))
 
-(declare atom swap!)
-
 (defn memoize 
   "Returns a memoized version of a referentially transparent function. The
   memoized version of the function keeps a cache of the mapping from arguments
@@ -3606,6 +3729,47 @@
         (let [ret (apply f args)]
           (swap! mem assoc args ret)
           ret)))))
+
+(defmacro condp
+  "Takes a binary predicate, an expression, and a set of clauses.
+  Each clause can take the form of either:
+  
+  test-expr result-expr
+
+  test-expr :>> result-fn
+
+  Note :>> is an ordinary keyword.
+
+  For each clause, (pred test-expr expr) is evaluated. If it returns
+  logical true, the clause is a match. If a binary clause matches, the
+  result-expr is returned, if a ternary clause matches, its result-fn,
+  which must be a unary function, is called with the result of the
+  predicate as its argument, the result of that call being the return
+  value of condp. A single default expression can follow the clauses,
+  and its value will be returned if no clause matches. If no default
+  expression is provided and no clause matches, an
+  IllegalArgumentException is thrown."
+
+  [pred expr & clauses]
+  (let [gpred (gensym "pred__")
+        gexpr (gensym "expr__")
+        emit (fn emit [pred expr args]
+               (let [[[a b c :as clause] more] 
+                       (split-at (if (= :>> (second args)) 3 2) args)
+                       n (count clause)]
+                 (cond 
+                  (= 0 n) `(throw (IllegalArgumentException. "No matching clause"))
+                  (= 1 n) a
+                  (= 2 n) `(if (~pred ~a ~expr) 
+                             ~b 
+                             ~(emit pred expr more))
+                  :else `(if-let [p# (~pred ~a ~expr)] 
+                           (~c p#) 
+                           ~(emit pred expr more)))))
+        gres (gensym "res__")]
+    `(let [~gpred ~pred
+           ~gexpr ~expr]
+       ~(emit gpred gexpr clauses))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;; helper files ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 

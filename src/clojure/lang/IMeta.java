@@ -8,15 +8,10 @@
  *   You must not remove this notice, or any other, from this software.
  **/
 
-/* rich Oct 18, 2007 */
+/* rich Dec 31, 2008 */
 
 package clojure.lang;
 
-import clojure.main;
-
-public class Script {
-
-public static void main(String[] args) throws Exception{
-    main.legacy_script(args);
-}
+public interface IMeta {
+    IPersistentMap meta();
 }

@@ -25,7 +25,7 @@ public class LispReader{
 static final Symbol QUOTE = Symbol.create("quote");
 static final Symbol THE_VAR = Symbol.create("var");
 //static Symbol SYNTAX_QUOTE = Symbol.create(null, "syntax-quote");
-//static Symbol UNQUOTE = Symbol.create(null, "unquote");
+static Symbol UNQUOTE = Symbol.create("clojure.core", "unquote");
 //static Symbol UNQUOTE_SPLICING = Symbol.create(null, "unquote-splicing");
 static Symbol CONCAT = Symbol.create("clojure.core", "concat");
 static Symbol LIST = Symbol.create("clojure.core", "list");
@@ -626,19 +626,19 @@ public static class MetaReader extends AFn{
 			throw new IllegalArgumentException("Metadata must be Symbol,Keyword,String or Map");
 
 		Object o = read(r, true, null, true);
-		if(o instanceof IObj)
+		if(o instanceof IMeta)
 			{
 			if(line != -1 && o instanceof ISeq)
 				meta = ((IPersistentMap) meta).assoc(RT.LINE_KEY, line);
-			if(o instanceof Var)
+			if(o instanceof IReference)
 				{
-				((Var)o).setMeta((IPersistentMap) meta);
+				((IReference)o).resetMeta((IPersistentMap) meta);
 				return o;
 				}
 			return ((IObj) o).withMeta((IPersistentMap) meta);
 			}
 		else
-			throw new IllegalArgumentException("Metadata can only be applied to IObjs");
+			throw new IllegalArgumentException("Metadata can only be applied to IMetas");
 	}
 
 }
@@ -676,15 +676,25 @@ public static class SyntaxQuoteReader extends AFn{
 				if(gs == null)
 					GENSYM_ENV.set(gmap.assoc(sym, gs = Symbol.intern(null,
 					                                                  sym.name.substring(0, sym.name.length() - 1)
-					                                                  + "__" + RT.nextID())));
+					                                                  + "__" + RT.nextID() + "__auto__")));
 				sym = gs;
 				}
-			else
+			else if(sym.ns == null && sym.name.endsWith("."))
+				{
+				Symbol csym = Symbol.intern(null, sym.name.substring(0, sym.name.length() - 1));
+				csym = Compiler.resolveSymbol(csym);
+				sym = Symbol.intern(null, csym.name.concat("."));
+				}
+			else if(sym.ns == null && sym.name.startsWith("."))
+				{
+				// Simply quote method names.
+ 				}
+            else
 				sym = Compiler.resolveSymbol(sym);
 			ret = RT.list(Compiler.QUOTE, sym);
 			}
-		else if(form instanceof Unquote)
-			return ((Unquote) form).o;
+		else if(isUnquote(form))
+			return RT.second(form);
 		else if(form instanceof UnquoteSplicing)
 			throw new IllegalStateException("splice not in list");
 		else if(form instanceof IPersistentCollection)
@@ -718,7 +728,7 @@ public static class SyntaxQuoteReader extends AFn{
 		else
 			ret = RT.list(Compiler.QUOTE, form);
 
-		if(form instanceof IObj && !(form instanceof Var) && ((IObj) form).meta() != null)
+		if(form instanceof IObj && RT.meta(form) != null)
 			{
 			//filter line numbers
 			IPersistentMap newMeta = ((IObj) form).meta().without(RT.LINE_KEY);
@@ -733,8 +743,8 @@ public static class SyntaxQuoteReader extends AFn{
 		for(; seq != null; seq = seq.rest())
 			{
 			Object item = seq.first();
-			if(item instanceof Unquote)
-				ret = ret.cons(RT.list(LIST, ((Unquote) item).o));
+			if(isUnquote(item))
+				ret = ret.cons(RT.list(LIST, RT.second(item)));
 			else if(item instanceof UnquoteSplicing)
 				ret = ret.cons(((UnquoteSplicing) item).o);
 			else
@@ -756,13 +766,6 @@ public static class SyntaxQuoteReader extends AFn{
 
 }
 
-static class Unquote{
-	final Object o;
-
-	public Unquote(Object o){
-		this.o = o;
-	}
-}
 
 static class UnquoteSplicing{
 	final Object o;
@@ -770,6 +773,10 @@ static class UnquoteSplicing{
 	public UnquoteSplicing(Object o){
 		this.o = o;
 	}
+}
+
+static boolean isUnquote(Object form){
+	return form instanceof ISeq && RT.first(form).equals(UNQUOTE);
 }
 
 static class UnquoteReader extends AFn{
@@ -787,7 +794,7 @@ static class UnquoteReader extends AFn{
 			{
 			unread(r, ch);
 			Object o = read(r, true, null, true);
-			return new Unquote(o);
+			return RT.list(UNQUOTE, o);
 			}
 	}
 
@@ -943,7 +950,7 @@ public static class VectorReader extends AFn{
 public static class MapReader extends AFn{
 	public Object invoke(Object reader, Object leftparen) throws Exception{
 		PushbackReader r = (PushbackReader) reader;
-		return PersistentHashMap.create(readDelimitedList('}', r, true));
+		return RT.map(readDelimitedList('}', r, true).toArray());
 	}
 
 }
