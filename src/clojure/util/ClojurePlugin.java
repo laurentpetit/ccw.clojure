@@ -8,8 +8,6 @@ import org.eclipse.core.runtime.IPluginDescriptor;
 import org.eclipse.core.runtime.Plugin;
 import org.osgi.framework.BundleContext;
 
-import clojure.lang.RT;
-
 
 public class ClojurePlugin extends Plugin {
 
