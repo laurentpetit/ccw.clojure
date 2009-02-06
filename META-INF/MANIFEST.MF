@@ -2,7 +2,7 @@ Manifest-Version: 1.0
 Bundle-ManifestVersion: 2
 Bundle-Name: Clojure Plug-in
 Bundle-SymbolicName: clojure;singleton:=true
-Bundle-Version: 0.0.0.20090120_r1217
+Bundle-Version: 0.0.0.20090120_r1217_compile_patch
 Bundle-ClassPath: .
 Export-Package: clojure,
  clojure.asm,
