@@ -25,7 +25,7 @@ volatile Object state;
 final public static ExecutorService pooledExecutor =
 		Executors.newFixedThreadPool(2 + Runtime.getRuntime().availableProcessors());
 
-final static ExecutorService soloExecutor = Executors.newCachedThreadPool();
+final public static ExecutorService soloExecutor = Executors.newCachedThreadPool();
 
 final static ThreadLocal<IPersistentVector> nested = new ThreadLocal<IPersistentVector>();
 
@@ -63,12 +63,12 @@ static class Action implements Runnable{
 			nested.set(PersistentVector.EMPTY);
 
 			boolean hadError = false;
-			boolean changed = false;
 			try
 				{
-				changed = action.agent.setState(action.fn.applyTo(RT.cons(action.agent.state, action.args)));
-                if(changed)
-                    action.agent.notifyWatches();
+				Object oldval = action.agent.state;
+				Object newval =  action.fn.applyTo(RT.cons(action.agent.state, action.args));
+				action.agent.setState(newval);
+                action.agent.notifyWatches(oldval,newval);
 				}
 			catch(Throwable e)
 				{
@@ -123,7 +123,7 @@ boolean setState(Object newState) throws Exception{
 	return ret;
 }
 
-public Object get() throws Exception{
+public Object deref() throws Exception{
 	if(errors != null)
 		{
 		throw new Exception("Agent has errors", (Exception) RT.first(errors));

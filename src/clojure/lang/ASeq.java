@@ -36,7 +36,7 @@ public boolean equiv(Object obj){
 	if(!(obj instanceof Sequential || obj instanceof List))
 		return false;
 	ISeq ms = RT.seq(obj);
-	for(ISeq s = seq(); s != null; s = s.rest(), ms = ms.rest())
+	for(ISeq s = seq(); s != null; s = s.next(), ms = ms.next())
 		{
 		if(ms == null || !Util.equiv(s.first(), ms.first()))
 			return false;
@@ -50,7 +50,7 @@ public boolean equals(Object obj){
 	if(!(obj instanceof Sequential || obj instanceof List))
 		return false;
 	ISeq ms = RT.seq(obj);
-	for(ISeq s = seq(); s != null; s = s.rest(), ms = ms.rest())
+	for(ISeq s = seq(); s != null; s = s.next(), ms = ms.next())
 		{
 		if(ms == null || !Util.equals(s.first(), ms.first()))
 			return false;
@@ -63,7 +63,7 @@ public int hashCode(){
 	if(_hash == -1)
 		{
 		int hash = 1;
-		for(ISeq s = seq(); s != null; s = s.rest())
+		for(ISeq s = seq(); s != null; s = s.next())
 			{
 			hash = 31 * hash + (s.first() == null ? 0 : s.first().hashCode());
 			}
@@ -97,18 +97,33 @@ public int hashCode(){
 
 public int count(){
 	int i = 1;
-	for(ISeq s = rest(); s != null; s = s.rest(), i++)
-		;
+	for(ISeq s = next(); s != null; s = s.next(), i++)
+		if(s instanceof Counted)
+			return i + s.count();
 	return i;
 }
 
-public ISeq seq(){
+final public ISeq seq(){
 	return this;
 }
 
 public ISeq cons(Object o){
 	return new Cons(o, this);
 }
+
+public ISeq more(){
+    ISeq s = next();
+    if(s == null)
+        return PersistentList.EMPTY;
+    return s;
+}
+
+//final public ISeq rest(){
+//    Seqable m = more();
+//    if(m == null)
+//        return null;
+//    return m.seq();
+//}
 
 // java.util.Collection implementation
 
@@ -153,7 +168,7 @@ public Object[] toArray(Object[] a){
 	if(a.length >= count())
 		{
 		ISeq s = seq();
-		for(int i = 0; s != null; ++i, s = s.rest())
+		for(int i = 0; s != null; ++i, s = s.next())
 			{
 			a[i] = s.first();
 			}
@@ -170,11 +185,11 @@ public int size(){
 }
 
 public boolean isEmpty(){
-	return count() == 0;
+	return seq() == null;
 }
 
 public boolean contains(Object o){
-	for(ISeq s = seq(); s != null; s = s.rest())
+	for(ISeq s = seq(); s != null; s = s.next())
 		{
 		if(Util.equiv(s.first(), o))
 			return true;
@@ -189,32 +204,33 @@ public Iterator iterator(){
 
 
 
-public IStream stream() throws Exception {
-    return new Stream(this);
+public Stream stream() throws Exception {
+    return new Stream(new Src(this));
 }
 
-    static class Stream implements IStream{
+static class Src extends AFn{
     ISeq s;
 
-    public Stream(ISeq s) {
+    public Src(ISeq s) {
         this.s = s;
     }
 
-    synchronized public Object next() throws Exception {
-        if(s != null)
+	public Object invoke() throws Exception {
+		ISeq sq = RT.seq(s);
+        if(sq != null)
             {
-            Object ret = s.first();
-            s = s.rest();
+            Object ret = sq.first();
+            s = sq.more();
             return ret;
             }
-        return RT.eos();
+        return RT.EOS;
     }
 }
 
 
 //////////// List stuff /////////////////
 private List reify(){
-	return new ArrayList(this);
+	return Collections.unmodifiableList(new ArrayList(this));
 }
 
 public List subList(int fromIndex, int toIndex){
@@ -231,7 +247,7 @@ public Object remove(int index){
 
 public int indexOf(Object o){
 	ISeq s = seq();
-	for(int i = 0; s != null; s = s.rest(), i++)
+	for(int i = 0; s != null; s = s.next(), i++)
 		{
 		if(Util.equiv(s.first(), o))
 			return i;

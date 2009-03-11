@@ -15,12 +15,6 @@ package clojure.lang;
 import java.math.BigInteger;
 import java.math.BigDecimal;
 import java.math.MathContext;
-import java.util.concurrent.Executor;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Callable;
-import java.util.concurrent.ExecutorService;
-import java.util.LinkedList;
-import java.util.Arrays;
 
 public class Numbers{
 
@@ -1039,35 +1033,35 @@ final static class BigDecimalOps implements Ops{
 	}
 
 	final public Number add(Number x, Number y){
-		MathContext mc = (MathContext) MATH_CONTEXT.get();
+		MathContext mc = (MathContext) MATH_CONTEXT.deref();
 		return mc == null
 		       ? toBigDecimal(x).add(toBigDecimal(y))
 		       : toBigDecimal(x).add(toBigDecimal(y), mc);
 	}
 
 	final public Number multiply(Number x, Number y){
-		MathContext mc = (MathContext) MATH_CONTEXT.get();
+		MathContext mc = (MathContext) MATH_CONTEXT.deref();
 		return mc == null
 		       ? toBigDecimal(x).multiply(toBigDecimal(y))
 		       : toBigDecimal(x).multiply(toBigDecimal(y), mc);
 	}
 
 	public Number divide(Number x, Number y){
-		MathContext mc = (MathContext) MATH_CONTEXT.get();
+		MathContext mc = (MathContext) MATH_CONTEXT.deref();
 		return mc == null
 		       ? toBigDecimal(x).divide(toBigDecimal(y))
 		       : toBigDecimal(x).divide(toBigDecimal(y), mc);
 	}
 
 	public Number quotient(Number x, Number y){
-		MathContext mc = (MathContext) MATH_CONTEXT.get();
+		MathContext mc = (MathContext) MATH_CONTEXT.deref();
 		return mc == null
 		       ? toBigDecimal(x).divideToIntegralValue(toBigDecimal(y))
 		       : toBigDecimal(x).divideToIntegralValue(toBigDecimal(y), mc);
 	}
 
 	public Number remainder(Number x, Number y){
-		MathContext mc = (MathContext) MATH_CONTEXT.get();
+		MathContext mc = (MathContext) MATH_CONTEXT.deref();
 		return mc == null
 		       ? toBigDecimal(x).remainder(toBigDecimal(y))
 		       : toBigDecimal(x).remainder(toBigDecimal(y), mc);
@@ -1083,14 +1077,14 @@ final static class BigDecimalOps implements Ops{
 
 	//public Number subtract(Number x, Number y);
 	final public Number negate(Number x){
-		MathContext mc = (MathContext) MATH_CONTEXT.get();
+		MathContext mc = (MathContext) MATH_CONTEXT.deref();
 		return mc == null
 		       ? ((BigDecimal) x).negate()
 		       : ((BigDecimal) x).negate(mc);
 	}
 
 	public Number inc(Number x){
-		MathContext mc = (MathContext) MATH_CONTEXT.get();
+		MathContext mc = (MathContext) MATH_CONTEXT.deref();
 		BigDecimal bx = (BigDecimal) x;
 		return mc == null
 		       ? bx.add(BigDecimal.ONE)
@@ -1098,7 +1092,7 @@ final static class BigDecimalOps implements Ops{
 	}
 
 	public Number dec(Number x){
-		MathContext mc = (MathContext) MATH_CONTEXT.get();
+		MathContext mc = (MathContext) MATH_CONTEXT.deref();
 		BigDecimal bx = (BigDecimal) x;
 		return mc == null
 		       ? bx.subtract(BigDecimal.ONE)
@@ -1422,7 +1416,7 @@ static BitOps bitOps(Object x){
 		else
 			{
 			ISeq s = RT.seq(init);
-			for(int i = 0; i < size && s != null; i++, s = s.rest())
+			for(int i = 0; i < size && s != null; i++, s = s.next())
 				ret[i] = ((Number) s.first()).floatValue();
 			}
 		return ret;
@@ -1436,7 +1430,7 @@ static BitOps bitOps(Object x){
 			ISeq s = RT.seq(sizeOrSeq);
 			int size = s.count();
 			float[] ret = new float[size];
-			for(int i = 0; i < size && s != null; i++, s = s.rest())
+			for(int i = 0; i < size && s != null; i++, s = s.next())
 				ret[i] = ((Number) s.first()).floatValue();
 			return ret;
 			}
@@ -1453,7 +1447,7 @@ static public double[] double_array(int size, Object init){
 	else
 		{
 		ISeq s = RT.seq(init);
-		for(int i = 0; i < size && s != null; i++, s = s.rest())
+		for(int i = 0; i < size && s != null; i++, s = s.next())
 			ret[i] = ((Number) s.first()).doubleValue();
 		}
 	return ret;
@@ -1467,7 +1461,7 @@ static public double[] double_array(Object sizeOrSeq){
 		ISeq s = RT.seq(sizeOrSeq);
 		int size = s.count();
 		double[] ret = new double[size];
-		for(int i = 0; i < size && s != null; i++, s = s.rest())
+		for(int i = 0; i < size && s != null; i++, s = s.next())
 			ret[i] = ((Number) s.first()).doubleValue();
 		return ret;
 		}
@@ -1484,7 +1478,7 @@ static public int[] int_array(int size, Object init){
 	else
 		{
 		ISeq s = RT.seq(init);
-		for(int i = 0; i < size && s != null; i++, s = s.rest())
+		for(int i = 0; i < size && s != null; i++, s = s.next())
 			ret[i] = ((Number) s.first()).intValue();
 		}
 	return ret;
@@ -1498,7 +1492,7 @@ static public int[] int_array(Object sizeOrSeq){
 		ISeq s = RT.seq(sizeOrSeq);
 		int size = s.count();
 		int[] ret = new int[size];
-		for(int i = 0; i < size && s != null; i++, s = s.rest())
+		for(int i = 0; i < size && s != null; i++, s = s.next())
 			ret[i] = ((Number) s.first()).intValue();
 		return ret;
 		}
@@ -1515,7 +1509,7 @@ static public long[] long_array(int size, Object init){
 	else
 		{
 		ISeq s = RT.seq(init);
-		for(int i = 0; i < size && s != null; i++, s = s.rest())
+		for(int i = 0; i < size && s != null; i++, s = s.next())
 			ret[i] = ((Number) s.first()).longValue();
 		}
 	return ret;
@@ -1529,7 +1523,7 @@ static public long[] long_array(Object sizeOrSeq){
 		ISeq s = RT.seq(sizeOrSeq);
 		int size = s.count();
 		long[] ret = new long[size];
-		for(int i = 0; i < size && s != null; i++, s = s.rest())
+		for(int i = 0; i < size && s != null; i++, s = s.next())
 			ret[i] = ((Number) s.first()).longValue();
 		return ret;
 		}

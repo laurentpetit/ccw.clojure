@@ -128,6 +128,10 @@ public boolean isBound(){
 }
 
 final public Object get(){
+	return deref();
+}
+
+final public Object deref(){
 	Box b = getThreadBinding();
 	if(b != null)
 		return b.val;
@@ -137,13 +141,13 @@ final public Object get(){
 }
 
 public void setValidator(IFn vf){
-	if(isBound())
+	if(hasRoot())
 		validate(vf, getRoot());
 	validator = vf;
 }
 
 public Object alter(IFn fn, ISeq args) throws Exception{
-	set(fn.applyTo(RT.cons(get(), args)));
+	set(fn.applyTo(RT.cons(deref(), args)));
 	return this;
 }
 
@@ -199,7 +203,9 @@ public boolean isPublic(){
 }
 
 public Object getRoot(){
-	return root;
+	if(hasRoot())
+		return root;
+	throw new IllegalStateException(String.format("Var %s/%s is unbound.", ns, sym));
 }
 
 public Object getTag(){
@@ -224,6 +230,7 @@ final public boolean hasRoot(){
 //binding root always clears macro flag
 synchronized public void bindRoot(Object root){
 	validate(getValidator(), root);
+	Object oldroot = hasRoot()?this.root:null;
 	this.root = root;
     try
         {
@@ -233,13 +240,14 @@ synchronized public void bindRoot(Object root){
         {
         throw new RuntimeException(e);
         }
-    notifyWatches();
+    notifyWatches(oldroot,this.root);
 }
 
 synchronized void swapRoot(Object root){
 	validate(getValidator(), root);
+	Object oldroot = hasRoot()?this.root:null;
 	this.root = root;
-    notifyWatches();
+    notifyWatches(oldroot,root);
 }
 
 synchronized public void unbindRoot(){
@@ -249,22 +257,24 @@ synchronized public void unbindRoot(){
 synchronized public void commuteRoot(IFn fn) throws Exception{
 	Object newRoot = fn.invoke(root);
 	validate(getValidator(), newRoot);
+	Object oldroot = getRoot();
 	this.root = newRoot;
-    notifyWatches();
+    notifyWatches(oldroot,newRoot);
 }
 
 synchronized public Object alterRoot(IFn fn, ISeq args) throws Exception{
 	Object newRoot = fn.applyTo(RT.cons(root, args));
 	validate(getValidator(), newRoot);
+	Object oldroot = getRoot();
 	this.root = newRoot;
-    notifyWatches();
+    notifyWatches(oldroot,newRoot);
 	return newRoot;
 }
 
 public static void pushThreadBindings(Associative bindings){
 	Frame f = dvals.get();
 	Associative bmap = f.bindings;
-	for(ISeq bs = bindings.seq(); bs != null; bs = bs.rest())
+	for(ISeq bs = bindings.seq(); bs != null; bs = bs.next())
 		{
 		IMapEntry e = (IMapEntry) bs.first();
 		Var v = (Var) e.key();
@@ -279,7 +289,7 @@ public static void popThreadBindings(){
 	Frame f = dvals.get();
 	if(f.prev == null)
 		throw new IllegalStateException("Pop without matching push");
-	for(ISeq bs = RT.keys(f.frameBindings); bs != null; bs = bs.rest())
+	for(ISeq bs = RT.keys(f.frameBindings); bs != null; bs = bs.next())
 		{
 		Var v = (Var) bs.first();
 		v.count.decrementAndGet();
@@ -291,7 +301,7 @@ public static void releaseThreadBindings(){
 	Frame f = dvals.get();
 	if(f.prev == null)
 		throw new IllegalStateException("Release without full unwind");
-	for(ISeq bs = RT.keys(f.bindings); bs != null; bs = bs.rest())
+	for(ISeq bs = RT.keys(f.bindings); bs != null; bs = bs.next())
 		{
 		Var v = (Var) bs.first();
 		v.count.decrementAndGet();
@@ -310,7 +320,7 @@ final Box getThreadBinding(){
 }
 
 final public IFn fn(){
-	return (IFn) get();
+	return (IFn) deref();
 }
 
 public Object call() throws Exception{
