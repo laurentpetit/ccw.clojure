@@ -2,7 +2,7 @@ Manifest-Version: 1.0
 Bundle-ManifestVersion: 2
 Bundle-Name: Clojure Plug-in
 Bundle-SymbolicName: clojure;singleton:=true
-Bundle-Version: 0.0.0.20090315_r1327
+Bundle-Version: 0.0.0.20090404_r1338
 Bundle-ClassPath: .,
  clojure.jar,
  clojure-sources.jar
