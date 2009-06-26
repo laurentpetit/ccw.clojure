@@ -2,7 +2,7 @@ Manifest-Version: 1.0
 Bundle-ManifestVersion: 2
 Bundle-Name: Clojure Plug-in
 Bundle-SymbolicName: clojure;singleton:=true
-Bundle-Version: 0.0.0.20090404_r1338
+Bundle-Version: 1.0.0
 Bundle-ClassPath: .,
  clojure.jar,
  clojure-sources.jar
@@ -10,10 +10,10 @@ Export-Package: clojure,
  clojure.asm,
  clojure.asm.commons,
  clojure.lang,
- clojure.util,
  clojure.proxy.clojure.lang,
  clojure.proxy.java.lang,
- clojure.proxy.javax.swing.table
+ clojure.proxy.javax.swing.table,
+ clojure.util
 Bundle-ActivationPolicy: lazy
 Bundle-Activator: clojure.util.ClojurePlugin
 Require-Bundle: org.eclipse.core.runtime;bundle-version="3.4.0"
