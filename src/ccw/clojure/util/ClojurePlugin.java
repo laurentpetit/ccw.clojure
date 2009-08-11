@@ -1,4 +1,4 @@
-package clojure.util;
+package ccw.clojure.util;
 
 import java.io.IOException;
 import java.net.URL;
