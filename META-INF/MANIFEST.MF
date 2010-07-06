@@ -2,18 +2,25 @@ Manifest-Version: 1.0
 Bundle-ManifestVersion: 2
 Bundle-Name: Clojure Plug-in
 Bundle-SymbolicName: ccw.clojure;singleton:=true
-Bundle-Version: 1.1.0
+Bundle-Version: 1.2.0.COMMIT-2ac93197e356af3c826ca895b5a538ad08c5715a
 Bundle-ClassPath: .,
  clojure.jar
 Export-Package: ccw.clojure.util,
  clojure,
  clojure.asm,
  clojure.asm.commons,
+ clojure.core,
+ clojure.core.protocols,
  clojure.core.proxy$clojure.lang,
- clojure.core.proxy$java.lang,
  clojure.inspector.proxy$java.lang,
  clojure.inspector.proxy$javax.swing.table,
+ clojure.java,
+ clojure.java.browse_ui.proxy$java.lang,
+ clojure.java.io,
  clojure.lang,
+ clojure.pprint,
+ clojure.pprint.proxy$java.io,
+ clojure.repl.proxy$java.io,
  clojure.test,
  clojure.xml.proxy$java.lang
 Bundle-ActivationPolicy: lazy
