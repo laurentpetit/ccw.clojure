@@ -2,7 +2,7 @@ Manifest-Version: 1.0
 Bundle-ManifestVersion: 2
 Bundle-Name: Clojure Plug-in
 Bundle-SymbolicName: ccw.clojure;singleton:=true
-Bundle-Version: 1.2.0.RC2
+Bundle-Version: 1.2.0.STABLE01
 Bundle-ClassPath: .,
  clojure.jar
 Export-Package: ccw.clojure.util,
