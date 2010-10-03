@@ -5,8 +5,9 @@ Bundle-SymbolicName: ccw.clojure;singleton:=true
 Bundle-Version: 1.2.0.STABLE01
 Bundle-ClassPath: .,
  clojure.jar
-Export-Package: ccw.clojure.util,
- clojure,
+Bundle-ActivationPolicy: lazy
+Bundle-RequiredExecutionEnvironment: J2SE-1.5
+Export-Package: clojure,
  clojure.asm,
  clojure.asm.commons,
  clojure.core,
@@ -23,8 +24,3 @@ Export-Package: ccw.clojure.util,
  clojure.repl.proxy$java.io,
  clojure.test,
  clojure.xml.proxy$java.lang
-Bundle-ActivationPolicy: lazy
-Bundle-Activator: ccw.clojure.util.ClojurePlugin
-Require-Bundle: org.eclipse.core.runtime;bundle-version="3.4.0"
-Bundle-RequiredExecutionEnvironment: J2SE-1.5
-Eclipse-BuddyPolicy: registered
