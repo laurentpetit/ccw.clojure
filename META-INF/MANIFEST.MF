@@ -2,14 +2,14 @@ Manifest-Version: 1.0
 Bundle-ManifestVersion: 2
 Bundle-Name: Clojure Plug-in
 Bundle-SymbolicName: ccw.clojure;singleton:=true
-Bundle-Version: 1.3.0.BETA001
+Bundle-Version: 1.3.0.qualifier
 Bundle-ClassPath: clojure.jar
 Bundle-ActivationPolicy: lazy
 Bundle-RequiredExecutionEnvironment: J2SE-1.5
 Export-Package: clojure;version="1.3.0",
  clojure.asm;version="1.3.0",
  clojure.asm.commons;version="1.3.0",
- clojure.core,
+ clojure.core;version="1.3.0",
  clojure.core.protocols;version="1.3.0",
  clojure.core.proxy$clojure.lang;version="1.3.0",
  clojure.data;version="1.3.0",
